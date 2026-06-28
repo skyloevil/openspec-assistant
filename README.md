@@ -97,6 +97,29 @@ Use OpenSpec Assistant to show status
 Use OpenSpec Assistant to continue
 ```
 
+## Optional TAPD Requirement Import
+
+OpenSpec Assistant includes an optional `tapd-requirement` MCP adapter that can fetch a TAPD story before proposal generation. This is useful when the source requirement lives in TAPD and the Codex prompt only contains a story URL.
+
+Before using TAPD import, configure your TAPD API account and password in your local environment. Do not commit real credentials to this repository.
+
+For local terminal testing, you can create a private `.tapd.env.local` file:
+
+```bash
+TAPD_API_USER=your_tapd_api_user
+TAPD_API_PASSWORD=your_tapd_api_password
+```
+
+`.tapd.env.local` is ignored by git. For Codex plugin usage, provide the same variables through your shell environment, personal Codex MCP configuration, or another local secret mechanism available to your Codex runtime.
+
+After reloading Codex MCP servers, trigger proposal generation with a TAPD story URL:
+
+```text
+Use OpenSpec Assistant to propose https://www.tapd.cn/tapd_fe/<workspace_id>/story/detail/<story_id>
+```
+
+The TAPD adapter parses the URL, calls the TAPD stories API, and returns normalized `proposalInput` fields for the OpenSpec proposal workflow. The raw TAPD API response is also included for custom field inspection.
+
 ## Commands and Skills
 
 OpenSpec Assistant ships with focused Codex skills:
@@ -111,6 +134,7 @@ OpenSpec Assistant ships with focused Codex skills:
 | `status` | Summarize active change state and next action. |
 | `continue` | Resume from the state machine. |
 | `customize` | Explain schema, template, rule, and hook customization. |
+| `tapd-openspec-proposal` | Fetch a TAPD story before proposal generation. |
 
 ## MCP Tools
 
@@ -270,7 +294,10 @@ openspec-assistant/
     plan/
     propose/
     status/
+    tapd-openspec-proposal/
     validate/
+  scripts/
+    tapd-mcp-server.mjs
 ```
 
 ## Relationship to OpenSpec

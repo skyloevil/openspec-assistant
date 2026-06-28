@@ -4,6 +4,13 @@
       "command": "node",
       "args": ["mcp-server/dist/index.js"],
       "env": {}
+    },
+    "tapd-requirement": {
+      "command": "node",
+      "args": ["scripts/tapd-mcp-server.mjs"],
+      "env": {
+        "TAPD_API_BASE": "https://api.tapd.cn"
+      }
     }
   }
 }
