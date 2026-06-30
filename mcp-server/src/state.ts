@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ChangeState, LegacyOpenSpecState, OpenSpecState, Phase } from './types.js';
+import type { ChangeState, LegacyOpenSpecState, OpenSpecState, OpenSpecStateV2, Phase } from './types.js';
 import { DEFAULT_STATE, STATE_FILE, OPENSPEC_SUBDIR } from './types.js';
 
 export function resolveProjectRoot(startDir: string = process.cwd()): string {
@@ -38,13 +38,9 @@ export function ensureStateDir(projectRoot: string): void {
 export function readState(projectRoot: string): OpenSpecState {
   const filePath = getStateFilePath(projectRoot);
   try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as OpenSpecState | LegacyOpenSpecState;
-    if ('version' in parsed && parsed.version === 2 && 'changes' in parsed) {
-      return {
-        ...structuredClone(DEFAULT_STATE),
-        ...parsed,
-        changes: parsed.changes || {},
-      };
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as OpenSpecState | OpenSpecStateV2 | LegacyOpenSpecState;
+    if ('version' in parsed && (parsed.version === 2 || parsed.version === 3) && 'changes' in parsed) {
+      return migrateVersionedState(parsed);
     }
     return migrateLegacyState(parsed as LegacyOpenSpecState);
   } catch {
@@ -79,6 +75,40 @@ export function getActiveChange(state: OpenSpecState): ChangeState | null {
 export function setActiveChange(state: OpenSpecState, change: ChangeState): void {
   state.activeChangeId = change.changeId;
   state.changes[change.changeId] = change;
+}
+
+export function createLoopState(
+  objective: string,
+  successCriteria: string[] = [],
+  mode: 'auto' | 'review' | 'manual' = 'review',
+): NonNullable<ChangeState['loop']> {
+  const timestamp = new Date().toISOString();
+  return {
+    objective,
+    successCriteria,
+    status: 'idle',
+    mode,
+    usage: {
+      iterations: 0,
+      startedAt: timestamp,
+      updatedAt: timestamp,
+    },
+    blockers: [],
+    validationEvidence: [],
+    humanReviews: [],
+    iterations: [],
+  };
+}
+
+export function ensureLoopState(
+  change: ChangeState,
+  objective: string = change.nextAction || change.changeId,
+  successCriteria: string[] = [],
+): NonNullable<ChangeState['loop']> {
+  if (!change.loop) {
+    change.loop = createLoopState(objective, successCriteria);
+  }
+  return change.loop;
 }
 
 export function updatePhase(
@@ -157,5 +187,31 @@ function migrateLegacyState(legacy: LegacyOpenSpecState): OpenSpecState {
   }
 
   setActiveChange(state, change);
+  return state;
+}
+
+function migrateVersionedState(parsed: OpenSpecState | OpenSpecStateV2): OpenSpecState {
+  const state: OpenSpecState = {
+    ...structuredClone(DEFAULT_STATE),
+    ...parsed,
+    version: 3,
+    changes: parsed.changes || {},
+  };
+  for (const change of Object.values(state.changes)) {
+    if (change.loop) {
+      change.loop = {
+        ...createLoopState(change.loop.objective || change.changeId, change.loop.successCriteria || [], change.loop.mode || 'review'),
+        ...change.loop,
+        usage: {
+          ...createLoopState(change.loop.objective || change.changeId).usage,
+          ...change.loop.usage,
+        },
+        blockers: change.loop.blockers || [],
+        validationEvidence: change.loop.validationEvidence || [],
+        humanReviews: change.loop.humanReviews || [],
+        iterations: change.loop.iterations || [],
+      };
+    }
+  }
   return state;
 }

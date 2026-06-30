@@ -8,12 +8,19 @@ import type {
   GateMode,
   HookDefinition,
   HookResult,
+  HumanGate,
+  HumanReviewRecord,
+  LoopDecision,
+  LoopIterationRecord,
   NextAction,
   OpenSpecState,
   Preset,
   ProjectConfig,
   ResponseFormat,
   TaskItem,
+  ValidationEvidence,
+  ValidationEvidenceStatus,
+  ValidationEvidenceType,
 } from './types.js';
 import {
   ARCHIVE_DIR,
@@ -21,7 +28,7 @@ import {
   DEFAULT_OPENSPEC_DIR,
   DEFAULT_PROJECT_CONFIG,
 } from './types.js';
-import { getActiveChange, readState, resolveProjectRoot, setActiveChange, updatePhase, writeState } from './state.js';
+import { createLoopState, ensureLoopState, getActiveChange, readState, resolveProjectRoot, setActiveChange, updatePhase, writeState } from './state.js';
 
 type ArtifactDefinition = {
   id: ArtifactId;
@@ -100,6 +107,10 @@ function generateChangeId(description: string): string {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+function createId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function mergeConfig(input?: Partial<ProjectConfig>): ProjectConfig {
@@ -496,6 +507,147 @@ function countRemainingTasks(projectRoot: string, change: ChangeState): number {
   return content ? (content.match(/- \[ \]/g) || []).length : 0;
 }
 
+function firstIncompleteTaskId(projectRoot: string, change: ChangeState): string | undefined {
+  if (!change.paths.tasks) return undefined;
+  const content = readFileSafe(safeJoin(projectRoot, change.paths.tasks));
+  const match = content?.match(/- \[ \] \*\*(T\d+)\*\*/);
+  return match?.[1];
+}
+
+function countCompletedTasks(projectRoot: string, change: ChangeState): number {
+  if (!change.paths.tasks) return 0;
+  const content = readFileSafe(safeJoin(projectRoot, change.paths.tasks));
+  return content ? (content.match(/- \[x\]/g) || []).length : 0;
+}
+
+function taskHasPassedEvidence(change: ChangeState, taskId: string): boolean {
+  return Boolean(change.loop?.validationEvidence.some((evidence) => (
+    evidence.status === 'passed' && evidence.relatedTaskIds.includes(taskId)
+  )));
+}
+
+function allCompletedTasksHaveEvidence(projectRoot: string, change: ChangeState): boolean {
+  if (!change.paths.tasks) return true;
+  const content = readFileSafe(safeJoin(projectRoot, change.paths.tasks));
+  if (!content) return false;
+  const completedTaskIds = [...content.matchAll(/- \[x\] \*\*(T\d+)\*\*/g)].map((match) => match[1]);
+  return completedTaskIds.every((taskId) => taskHasPassedEvidence(change, taskId));
+}
+
+function hasPendingHumanReview(change: ChangeState): boolean {
+  return Boolean(change.loop?.humanReviews.some((review) => review.status === 'pending'));
+}
+
+function recordBlocker(change: ChangeState, id: string, description: string): number {
+  const loop = ensureLoopState(change);
+  const timestamp = now();
+  const existing = loop.blockers.find((blocker) => blocker.id === id);
+  if (existing) {
+    existing.count += 1;
+    existing.description = description;
+    existing.lastSeenAt = timestamp;
+    return existing.count;
+  }
+  loop.blockers.push({
+    id,
+    description,
+    count: 1,
+    firstSeenAt: timestamp,
+    lastSeenAt: timestamp,
+  });
+  return 1;
+}
+
+function createDecision(
+  kind: LoopDecision['kind'],
+  reason: string,
+  nextAction: string,
+  riskLevel: LoopDecision['riskLevel'] = 'low',
+  extra: Partial<LoopDecision> = {},
+): LoopDecision {
+  return { kind, reason, nextAction, riskLevel, ...extra };
+}
+
+function deriveLoopDecision(projectRoot: string, change: ChangeState): LoopDecision {
+  if (change.archived || change.phase === 'complete') {
+    return createDecision('complete', 'The active change is already archived.', 'No further action is required.');
+  }
+  if (hasPendingHumanReview(change)) {
+    return createDecision(
+      'ask_human',
+      'A human review is already pending.',
+      'Resolve the pending human review before continuing.',
+      'medium',
+      { requiredGate: change.loop?.humanReviews.find((review) => review.status === 'pending')?.gate },
+    );
+  }
+  if (!change.gates.scope) {
+    return createDecision(
+      'ask_human',
+      'Scope has not been approved.',
+      `Review and approve the scope for ${change.changeId}.`,
+      'medium',
+      { requiredGate: 'scope_review' },
+    );
+  }
+  if (change.preset === 'full' && !change.gates.design) {
+    return createDecision(
+      'ask_human',
+      'Design has not been approved.',
+      `Review and approve the technical design for ${change.changeId}.`,
+      'medium',
+      { requiredGate: 'design_review' },
+    );
+  }
+  const taskId = firstIncompleteTaskId(projectRoot, change);
+  if (taskId) {
+    return createDecision(
+      'act',
+      'There is an incomplete implementation task.',
+      `Implement the next incomplete task: ${taskId}.`,
+      'low',
+      { taskId },
+    );
+  }
+  if (!allCompletedTasksHaveEvidence(projectRoot, change)) {
+    return createDecision(
+      'validate',
+      'At least one completed task lacks passed validation evidence.',
+      'Run focused validation and record evidence for completed tasks.',
+      'medium',
+    );
+  }
+  if (!change.gates.validation) {
+    return createDecision(
+      'validate',
+      'Validation has not been confirmed.',
+      'Run validation and request validation review when clean.',
+      'medium',
+      { requiredGate: 'validation_review' },
+    );
+  }
+  const pendingPreArchive = getPendingHooks(projectRoot, { hookPoint: 'pre_archive', changeId: change.changeId });
+  if (pendingPreArchive.blocked) {
+    return createDecision(
+      'run_hook',
+      'A required pre_archive hook is pending or failed.',
+      'Run or resolve required pre_archive hooks before archiving.',
+      'medium',
+      { hookPoint: 'pre_archive' },
+    );
+  }
+  if (!change.gates.archive) {
+    return createDecision(
+      'ask_human',
+      'Archive approval has not been granted.',
+      `Review archive readiness for ${change.changeId}.`,
+      'medium',
+      { requiredGate: 'archive_review' },
+    );
+  }
+  return createDecision('archive', 'All loop completion prerequisites are satisfied.', `Archive ${change.changeId}.`);
+}
+
 function formatResponse(data: unknown, format: ResponseFormat = 'json'): string {
   if (format === 'json') {
     return JSON.stringify(data, null, 2);
@@ -572,6 +724,11 @@ export function createChange(
   const changeId = generateChangeId(options.description);
   const artifactIds = PRESET_ARTIFACTS[preset];
   const change = createChangeState(changeId, preset, options.schema || config.schema, artifactIds);
+  change.loop = createLoopState(options.description, [
+    'All required OpenSpec tasks are completed.',
+    'Required validation evidence is recorded.',
+    'Required hooks pass or are explicitly reviewed.',
+  ], config.interaction.defaultGate);
 
   for (const artifactId of artifactIds) {
     const relativePath = artifactRelativePath(change.paths.changeDir, artifactId);
@@ -590,6 +747,290 @@ export function createChange(
     changeDir: change.paths.changeDir,
     state: change,
   };
+}
+
+export function createGoal(
+  projectRoot: string,
+  options: {
+    objective?: string;
+    successCriteria?: string[];
+    mode?: GateMode;
+    tokenBudget?: number;
+    maxIterations?: number;
+    maxRuntimeMs?: number;
+    changeId?: string;
+  } = {},
+): { success: boolean; changeId: string; loop: NonNullable<ChangeState['loop']>; decision: LoopDecision } {
+  const state = readState(projectRoot);
+  const change = options.changeId ? state.changes[options.changeId] : getActiveChange(state);
+  if (!change) throw new Error('No active OpenSpec change. Create a change first.');
+  const loop = createLoopState(
+    options.objective || change.nextAction || change.changeId,
+    options.successCriteria || [
+      'All required OpenSpec tasks are completed.',
+      'Required validation evidence is recorded.',
+      'Required human gates are approved.',
+    ],
+    options.mode || readProjectConfig(projectRoot).interaction.defaultGate,
+  );
+  if (options.tokenBudget || options.maxIterations || options.maxRuntimeMs) {
+    loop.budget = {
+      tokenBudget: options.tokenBudget,
+      maxIterations: options.maxIterations,
+      maxRuntimeMs: options.maxRuntimeMs,
+    };
+  }
+  change.loop = loop;
+  const decision = deriveLoopDecision(projectRoot, change);
+  loop.lastDecision = decision;
+  loop.status = decision.kind === 'ask_human' ? 'waiting_for_human' : 'running';
+  loop.usage.updatedAt = now();
+  state.changes[change.changeId] = change;
+  writeState(projectRoot, state);
+  return { success: true, changeId: change.changeId, loop, decision };
+}
+
+export function getGoal(projectRoot: string): {
+  activeChangeId?: string;
+  phase: string;
+  loop: ChangeState['loop'] | null;
+  decision: LoopDecision | null;
+  tasks: { completed: number; remaining: number };
+} {
+  const state = readState(projectRoot);
+  const change = getActiveChange(state);
+  if (!change) {
+    return { phase: 'idle', loop: null, decision: null, tasks: { completed: 0, remaining: 0 } };
+  }
+  const loop = ensureLoopState(change, change.nextAction || change.changeId);
+  const decision = deriveLoopDecision(projectRoot, change);
+  loop.lastDecision = decision;
+  loop.usage.updatedAt = now();
+  state.changes[change.changeId] = change;
+  writeState(projectRoot, state);
+  return {
+    activeChangeId: change.changeId,
+    phase: change.phase,
+    loop,
+    decision,
+    tasks: {
+      completed: countCompletedTasks(projectRoot, change),
+      remaining: countRemainingTasks(projectRoot, change),
+    },
+  };
+}
+
+export function continueLoop(projectRoot: string): {
+  changeId: string;
+  status: NonNullable<ChangeState['loop']>['status'];
+  decision: LoopDecision;
+  loop: NonNullable<ChangeState['loop']>;
+} {
+  const { state, change } = requireActiveChange(projectRoot);
+  const loop = ensureLoopState(change, change.nextAction || change.changeId);
+  const decision = deriveLoopDecision(projectRoot, change);
+  loop.lastDecision = decision;
+  loop.usage.iterations += 1;
+  loop.usage.updatedAt = now();
+  if (decision.kind === 'ask_human') {
+    loop.status = 'waiting_for_human';
+    if (decision.requiredGate && !loop.humanReviews.some((review) => review.status === 'pending' && review.gate === decision.requiredGate)) {
+      loop.humanReviews.push(createHumanReview(decision.requiredGate, decision.reason, decision.riskLevel));
+    }
+  } else if (decision.kind === 'validate') {
+    loop.status = 'validating';
+  } else if (decision.kind === 'complete') {
+    loop.status = 'complete';
+  } else if (decision.kind === 'blocked') {
+    loop.status = 'blocked';
+  } else {
+    loop.status = 'running';
+  }
+  state.changes[change.changeId] = change;
+  writeState(projectRoot, state);
+  return { changeId: change.changeId, status: loop.status, decision, loop };
+}
+
+function createHumanReview(gate: HumanGate, reason: string, riskLevel: LoopDecision['riskLevel']): HumanReviewRecord {
+  return {
+    id: createId('review'),
+    gate,
+    status: 'pending',
+    reason,
+    riskLevel,
+    options: ['approve', 'revise', 'cancel'],
+    recommendedOption: 'approve',
+    createdAt: now(),
+  };
+}
+
+export function requestHumanReview(
+  projectRoot: string,
+  options: {
+    gate: HumanGate;
+    reason: string;
+    riskLevel?: LoopDecision['riskLevel'];
+    options?: string[];
+    recommendedOption?: string;
+    changeId?: string;
+  },
+): { success: boolean; review: HumanReviewRecord; loop: NonNullable<ChangeState['loop']> } {
+  const state = readState(projectRoot);
+  const change = options.changeId ? state.changes[options.changeId] : getActiveChange(state);
+  if (!change) throw new Error('No active OpenSpec change. Create a change first.');
+  const loop = ensureLoopState(change);
+  const review = createHumanReview(options.gate, options.reason, options.riskLevel || 'medium');
+  if (options.options) review.options = options.options;
+  if (options.recommendedOption) review.recommendedOption = options.recommendedOption;
+  loop.status = 'waiting_for_human';
+  loop.humanReviews.push(review);
+  loop.usage.updatedAt = now();
+  state.changes[change.changeId] = change;
+  writeState(projectRoot, state);
+  return { success: true, review, loop };
+}
+
+export function resolveHumanReview(
+  projectRoot: string,
+  options: { reviewId: string; status: HumanReviewRecord['status']; resolution?: string; changeId?: string },
+): { success: boolean; review: HumanReviewRecord; loop: NonNullable<ChangeState['loop']> } {
+  const state = readState(projectRoot);
+  const change = options.changeId ? state.changes[options.changeId] : getActiveChange(state);
+  if (!change) throw new Error('No active OpenSpec change. Create a change first.');
+  const loop = ensureLoopState(change);
+  const review = loop.humanReviews.find((item) => item.id === options.reviewId);
+  if (!review) throw new Error(`Human review not found: ${options.reviewId}`);
+  review.status = options.status;
+  review.resolution = options.resolution;
+  review.resolvedAt = now();
+  if (options.status === 'approved') {
+    if (review.gate === 'scope_review') {
+      change.gates.scope = true;
+      updatePhase(change, change.preset === 'full' ? 'plan' : 'implement', change.preset === 'full' ? 'Scope approved. Confirm design before implementation.' : 'Scope approved. Continue implementation tasks.');
+    } else if (review.gate === 'design_review') {
+      change.gates.design = true;
+      updatePhase(change, 'implement', 'Design approved. Continue implementation tasks.');
+    } else if (review.gate === 'validation_review') {
+      change.gates.validation = true;
+      updatePhase(change, 'archive', 'Validation approved. Ready for archive review.');
+    } else if (review.gate === 'archive_review') {
+      change.gates.archive = true;
+      updatePhase(change, 'archive', 'Archive approved. Ready to archive.');
+    }
+  }
+  loop.status = options.status === 'approved' ? 'running' : 'waiting_for_human';
+  loop.usage.updatedAt = now();
+  state.changes[change.changeId] = change;
+  writeState(projectRoot, state);
+  return { success: true, review, loop };
+}
+
+export function recordIteration(
+  projectRoot: string,
+  options: {
+    taskId?: string;
+    summary: string;
+    filesChanged?: string[];
+    commandsRun?: string[];
+    testResults?: string[];
+    errors?: string[];
+    evidenceRefs?: string[];
+    changeId?: string;
+  },
+): { success: boolean; iteration: LoopIterationRecord; loop: NonNullable<ChangeState['loop']> } {
+  const state = readState(projectRoot);
+  const change = options.changeId ? state.changes[options.changeId] : getActiveChange(state);
+  if (!change) throw new Error('No active OpenSpec change. Create a change first.');
+  const loop = ensureLoopState(change);
+  const iteration: LoopIterationRecord = {
+    id: createId('iteration'),
+    taskId: options.taskId,
+    summary: options.summary,
+    filesChanged: options.filesChanged || [],
+    commandsRun: options.commandsRun || [],
+    testResults: options.testResults || [],
+    errors: options.errors || [],
+    evidenceRefs: options.evidenceRefs || [],
+    createdAt: now(),
+  };
+  loop.iterations.push(iteration);
+  loop.currentTaskId = options.taskId;
+  loop.usage.updatedAt = now();
+  state.changes[change.changeId] = change;
+  writeState(projectRoot, state);
+  return { success: true, iteration, loop };
+}
+
+export function recordValidationEvidence(
+  projectRoot: string,
+  options: {
+    type: ValidationEvidenceType;
+    status: ValidationEvidenceStatus;
+    summary: string;
+    command?: string;
+    relatedTaskIds?: string[];
+    relatedCriteria?: string[];
+    changeId?: string;
+  },
+): { success: boolean; evidence: ValidationEvidence; loop: NonNullable<ChangeState['loop']> } {
+  const state = readState(projectRoot);
+  const change = options.changeId ? state.changes[options.changeId] : getActiveChange(state);
+  if (!change) throw new Error('No active OpenSpec change. Create a change first.');
+  const loop = ensureLoopState(change);
+  const evidence: ValidationEvidence = {
+    id: createId('evidence'),
+    type: options.type,
+    status: options.status,
+    command: options.command,
+    summary: options.summary,
+    relatedTaskIds: options.relatedTaskIds || [],
+    relatedCriteria: options.relatedCriteria || [],
+    createdAt: now(),
+  };
+  loop.validationEvidence.push(evidence);
+  loop.usage.updatedAt = now();
+  state.changes[change.changeId] = change;
+  writeValidationJson(projectRoot, change);
+  appendEvidence(projectRoot, change, `- Evidence ${evidence.id}: ${evidence.type}/${evidence.status} - ${evidence.summary}`);
+  writeState(projectRoot, state);
+  return { success: true, evidence, loop };
+}
+
+function writeValidationJson(projectRoot: string, change: ChangeState): void {
+  const filePath = safeJoin(projectRoot, path.posix.join(change.paths.changeDir, 'verification.json'));
+  writeFileSafe(filePath, JSON.stringify({ changeId: change.changeId, evidence: change.loop?.validationEvidence || [] }, null, 2));
+}
+
+export function updateGoalStatus(
+  projectRoot: string,
+  options: { status: 'complete' | 'blocked' | 'cancelled'; blockerId?: string; blockerDescription?: string; changeId?: string },
+): { success: boolean; status: NonNullable<ChangeState['loop']>['status']; loop: NonNullable<ChangeState['loop']> } {
+  const state = readState(projectRoot);
+  const change = options.changeId ? state.changes[options.changeId] : getActiveChange(state);
+  if (!change) throw new Error('No active OpenSpec change. Create a change first.');
+  const loop = ensureLoopState(change);
+  if (options.status === 'complete') {
+    const decision = deriveLoopDecision(projectRoot, change);
+    if (decision.kind !== 'complete') {
+      throw new Error(`Goal cannot be completed yet: ${decision.reason}`);
+    }
+    loop.status = 'complete';
+  } else if (options.status === 'blocked') {
+    const count = recordBlocker(change, options.blockerId || 'manual-blocker', options.blockerDescription || 'Goal is blocked.');
+    if (count < 3) {
+      loop.usage.updatedAt = now();
+      state.changes[change.changeId] = change;
+      writeState(projectRoot, state);
+      throw new Error(`Goal cannot be marked blocked until the same blocker repeats 3 times. Current count: ${count}`);
+    }
+    loop.status = 'blocked';
+  } else {
+    loop.status = 'cancelled';
+  }
+  loop.usage.updatedAt = now();
+  state.changes[change.changeId] = change;
+  writeState(projectRoot, state);
+  return { success: true, status: loop.status, loop };
 }
 
 export function createOrUpdateArtifact(
@@ -806,6 +1247,14 @@ export function validateDrift(projectRoot: string): { driftItems: DriftItem[]; s
       location: change.paths.tasks,
     });
   }
+  if (change.loop && remaining === 0 && !allCompletedTasksHaveEvidence(projectRoot, change)) {
+    driftItems.push({
+      type: 'validation_evidence_missing',
+      description: 'One or more completed tasks do not have passed validation evidence.',
+      severity: 'medium',
+      location: path.posix.join(change.paths.changeDir, 'verification.json'),
+    });
+  }
   const pendingPreArchive = getPendingHooks(projectRoot, { hookPoint: 'pre_archive', changeId: change.changeId });
   if (pendingPreArchive.blocked) {
     driftItems.push({
@@ -848,6 +1297,14 @@ export function archiveChange(
       fs.copyFileSync(src, path.join(archiveDirFull, path.basename(artifact.path)));
     }
   }
+  const verificationJson = safeJoin(projectRoot, path.posix.join(change.paths.changeDir, 'verification.json'));
+  if (fs.existsSync(verificationJson)) {
+    fs.copyFileSync(verificationJson, path.join(archiveDirFull, 'verification.json'));
+  }
+  if (change.loop) {
+    change.loop.status = 'complete';
+    change.loop.usage.updatedAt = now();
+  }
   const metadata = {
     changeId: change.changeId,
     archivedAt: now(),
@@ -856,6 +1313,7 @@ export function archiveChange(
     schema: change.schema,
     artifacts: change.artifacts,
     hooks: change.hooks,
+    loop: change.loop,
   };
   writeFileSafe(path.join(archiveDirFull, 'archive-metadata.json'), JSON.stringify(metadata, null, 2));
   const kbDir = safeJoin(projectRoot, path.posix.join(ARCHIVE_DIR, '_knowledge-base'));

@@ -9,26 +9,34 @@ import {
   archiveChange,
   cancelChange,
   createChange,
+  createGoal,
   createDesign,
   createOrUpdateArtifact,
   createProposal,
   createTasks,
+  continueLoop,
   detectLayout,
   formatToolResponse,
+  getGoal,
   getNextActions,
   getPendingHooks,
   initProject,
   listArchives,
   listChanges,
   readArtifact,
+  recordIteration,
+  recordValidationEvidence,
   recordHookResult,
+  requestHumanReview,
+  resolveHumanReview,
   setGate,
   summarizeNext,
+  updateGoalStatus,
   updateTaskStatus,
   validateDrift,
 } from './openspec.js';
 import { readState, resolveProjectRoot } from './state.js';
-import type { ArtifactId, GateMode, HookKind, HookStatus, Preset, ResponseFormat } from './types.js';
+import type { ArtifactId, GateMode, HookKind, HookStatus, HumanGate, HumanReviewRecord, Preset, ResponseFormat, ValidationEvidenceStatus, ValidationEvidenceType } from './types.js';
 
 const server = new Server(
   {
@@ -72,6 +80,34 @@ const TOOL_DEFINITIONS = [
   {
     name: 'openspec_get_next_actions',
     description: 'Return the next workflow actions derived from artifact state, gates, and task progress.',
+    inputSchema: { type: 'object', properties: { workDir: workDirSchema, response_format: responseFormatSchema } },
+  },
+  {
+    name: 'openspec_create_goal',
+    description: 'Create or replace the goal-compatible loop state for the active OpenSpec change.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workDir: workDirSchema,
+        objective: { type: 'string' },
+        successCriteria: { type: 'array', items: { type: 'string' } },
+        mode: { type: 'string', enum: ['auto', 'review', 'manual'] },
+        tokenBudget: { type: 'number' },
+        maxIterations: { type: 'number' },
+        maxRuntimeMs: { type: 'number' },
+        changeId: { type: 'string' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'openspec_get_goal',
+    description: 'Get active loop objective, status, usage, blockers, evidence, and next decision.',
+    inputSchema: { type: 'object', properties: { workDir: workDirSchema, response_format: responseFormatSchema } },
+  },
+  {
+    name: 'openspec_continue_loop',
+    description: 'Advance the loop decision state until action, validation, human review, archive, complete, or blocked is required.',
     inputSchema: { type: 'object', properties: { workDir: workDirSchema, response_format: responseFormatSchema } },
   },
   {
@@ -218,6 +254,110 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'openspec_record_iteration',
+    description: 'Record one loop iteration with task, changed files, commands, tests, errors, and evidence references.',
+    inputSchema: {
+      type: 'object',
+      required: ['summary'],
+      properties: {
+        workDir: workDirSchema,
+        taskId: { type: 'string' },
+        summary: { type: 'string' },
+        filesChanged: { type: 'array', items: { type: 'string' } },
+        commandsRun: { type: 'array', items: { type: 'string' } },
+        testResults: { type: 'array', items: { type: 'string' } },
+        errors: { type: 'array', items: { type: 'string' } },
+        evidenceRefs: { type: 'array', items: { type: 'string' } },
+        changeId: { type: 'string' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'openspec_record_validation_evidence',
+    description: 'Record structured validation evidence and append it to verification artifacts.',
+    inputSchema: {
+      type: 'object',
+      required: ['type', 'status', 'summary'],
+      properties: {
+        workDir: workDirSchema,
+        type: { type: 'string', enum: ['test', 'lint', 'typecheck', 'manual', 'hook', 'spec_alignment', 'ci'] },
+        status: { type: 'string', enum: ['passed', 'failed', 'skipped'] },
+        summary: { type: 'string' },
+        command: { type: 'string' },
+        relatedTaskIds: { type: 'array', items: { type: 'string' } },
+        relatedCriteria: { type: 'array', items: { type: 'string' } },
+        changeId: { type: 'string' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'openspec_request_human_review',
+    description: 'Create a pending human review gate for risk, validation, archive, or business approval.',
+    inputSchema: {
+      type: 'object',
+      required: ['gate', 'reason'],
+      properties: {
+        workDir: workDirSchema,
+        gate: {
+          type: 'string',
+          enum: [
+            'scope_review',
+            'design_review',
+            'risk_review',
+            'destructive_change_review',
+            'external_write_review',
+            'public_api_review',
+            'database_schema_review',
+            'security_review',
+            'validation_review',
+            'archive_review',
+            'blocked_review',
+          ],
+        },
+        reason: { type: 'string' },
+        riskLevel: { type: 'string', enum: ['low', 'medium', 'high'] },
+        options: { type: 'array', items: { type: 'string' } },
+        recommendedOption: { type: 'string' },
+        changeId: { type: 'string' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'openspec_resolve_human_review',
+    description: 'Resolve a pending human review gate.',
+    inputSchema: {
+      type: 'object',
+      required: ['reviewId', 'status'],
+      properties: {
+        workDir: workDirSchema,
+        reviewId: { type: 'string' },
+        status: { type: 'string', enum: ['pending', 'approved', 'rejected', 'revise', 'cancelled'] },
+        resolution: { type: 'string' },
+        changeId: { type: 'string' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'openspec_update_goal_status',
+    description: 'Mark loop goal complete, blocked, or cancelled while enforcing completion and blocker rules.',
+    inputSchema: {
+      type: 'object',
+      required: ['status'],
+      properties: {
+        workDir: workDirSchema,
+        status: { type: 'string', enum: ['complete', 'blocked', 'cancelled'] },
+        blockerId: { type: 'string' },
+        blockerDescription: { type: 'string' },
+        changeId: { type: 'string' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
     name: 'list_archives',
     description: 'Deprecated alias: list archived knowledge-base entries.',
     inputSchema: { type: 'object', properties: { workDir: workDirSchema, response_format: responseFormatSchema } },
@@ -281,6 +421,20 @@ function dispatchTool(name: string, args: Record<string, unknown>, projectRoot: 
     case 'openspec_get_next_actions':
     case 'summarize_next':
       return getNextActions(projectRoot);
+    case 'openspec_create_goal':
+      return createGoal(projectRoot, {
+        objective: args.objective as string | undefined,
+        successCriteria: args.successCriteria as string[] | undefined,
+        mode: args.mode as GateMode | undefined,
+        tokenBudget: args.tokenBudget as number | undefined,
+        maxIterations: args.maxIterations as number | undefined,
+        maxRuntimeMs: args.maxRuntimeMs as number | undefined,
+        changeId: args.changeId as string | undefined,
+      });
+    case 'openspec_get_goal':
+      return getGoal(projectRoot);
+    case 'openspec_continue_loop':
+      return continueLoop(projectRoot);
     case 'openspec_read_artifact':
       return readArtifact(projectRoot, {
         artifactId: args.artifactId as ArtifactId,
@@ -352,6 +506,50 @@ function dispatchTool(name: string, args: Record<string, unknown>, projectRoot: 
         hookName: args.hookName as string,
         status: args.status as HookStatus,
         message: args.message as string | undefined,
+        changeId: args.changeId as string | undefined,
+      });
+    case 'openspec_record_iteration':
+      return recordIteration(projectRoot, {
+        taskId: args.taskId as string | undefined,
+        summary: args.summary as string,
+        filesChanged: args.filesChanged as string[] | undefined,
+        commandsRun: args.commandsRun as string[] | undefined,
+        testResults: args.testResults as string[] | undefined,
+        errors: args.errors as string[] | undefined,
+        evidenceRefs: args.evidenceRefs as string[] | undefined,
+        changeId: args.changeId as string | undefined,
+      });
+    case 'openspec_record_validation_evidence':
+      return recordValidationEvidence(projectRoot, {
+        type: args.type as ValidationEvidenceType,
+        status: args.status as ValidationEvidenceStatus,
+        summary: args.summary as string,
+        command: args.command as string | undefined,
+        relatedTaskIds: args.relatedTaskIds as string[] | undefined,
+        relatedCriteria: args.relatedCriteria as string[] | undefined,
+        changeId: args.changeId as string | undefined,
+      });
+    case 'openspec_request_human_review':
+      return requestHumanReview(projectRoot, {
+        gate: args.gate as HumanGate,
+        reason: args.reason as string,
+        riskLevel: args.riskLevel as 'low' | 'medium' | 'high' | undefined,
+        options: args.options as string[] | undefined,
+        recommendedOption: args.recommendedOption as string | undefined,
+        changeId: args.changeId as string | undefined,
+      });
+    case 'openspec_resolve_human_review':
+      return resolveHumanReview(projectRoot, {
+        reviewId: args.reviewId as string,
+        status: args.status as HumanReviewRecord['status'],
+        resolution: args.resolution as string | undefined,
+        changeId: args.changeId as string | undefined,
+      });
+    case 'openspec_update_goal_status':
+      return updateGoalStatus(projectRoot, {
+        status: args.status as 'complete' | 'blocked' | 'cancelled',
+        blockerId: args.blockerId as string | undefined,
+        blockerDescription: args.blockerDescription as string | undefined,
         changeId: args.changeId as string | undefined,
       });
     case 'list_archives':

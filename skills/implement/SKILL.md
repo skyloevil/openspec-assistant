@@ -37,9 +37,15 @@ Work through tasks one at a time:
 1. Find the first incomplete task (marked `[ ]` in tasks.md)
 2. Read `design`, `specs`, and `implementation_notes` artifacts when present
 3. Implement the required code changes
-4. After implementation is done, **ask user to verify** the change is correct
-5. Call `openspec_update_task({ taskId: "T1", done: true })` to mark it complete
-6. Repeat for the next incomplete task
+4. Run focused verification for the task
+5. Call `openspec_record_validation_evidence` with the check result
+6. Call `openspec_record_iteration` with changed files, commands, test results,
+   errors, and evidence references
+7. After implementation is done, **ask user to verify** the change when the task
+   has medium/high risk, external side effects, or ambiguous acceptance criteria
+8. Call `openspec_update_task({ taskId: "T1", done: true })` only after passed
+   evidence exists or the user explicitly approves pending validation
+9. Repeat for the next incomplete task
 
 ### Step 4: Validation Checkpoints
 After each task, provide a brief summary:
@@ -52,7 +58,10 @@ After each task, provide a brief summary:
 - Changing public API signatures
 - Modifying database schemas
 - Large refactors affecting existing tests
+- Writing to external systems
+- Security-sensitive or permission-sensitive changes
 - Flag these in the summary and ask for confirmation before proceeding
+  with `openspec_request_human_review`.
 
 ### Step 5: Task Completion
 When all tasks are done (`openspec_update_task` returns `tasksRemaining = 0`):

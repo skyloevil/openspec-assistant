@@ -151,6 +151,14 @@ The MCP server exposes structured tools used by the skills and by Codex:
 | `openspec_create_or_update_artifact` | Write proposal, specs, design, tasks, verification, or notes. |
 | `openspec_get_status` | Return active change, gates, paths, phase, and next action. |
 | `openspec_get_next_actions` | Derive the next workflow step from artifacts, gates, hooks, and tasks. |
+| `openspec_create_goal` | Create a goal-compatible loop state for the active change. |
+| `openspec_get_goal` | Return objective, loop status, usage, blockers, evidence, and next decision. |
+| `openspec_continue_loop` | Advance the loop to the next action, validation, hook, human review, archive, complete, or blocked decision. |
+| `openspec_record_iteration` | Record task execution feedback, files, commands, checks, errors, and evidence references. |
+| `openspec_record_validation_evidence` | Store structured validation evidence in state, `verification.md`, and `verification.json`. |
+| `openspec_request_human_review` | Create a pending human review gate for risk, validation, archive, or business approval. |
+| `openspec_resolve_human_review` | Resolve a pending human review and map approved core reviews back to OpenSpec gates. |
+| `openspec_update_goal_status` | Mark a loop complete, blocked, or cancelled while enforcing completion and blocker rules. |
 | `openspec_update_task` | Mark task checkboxes complete or reopen them. |
 | `openspec_validate` | Validate artifact presence, task status, and required hooks. |
 | `openspec_archive_change` | Archive the active change and record knowledge-base metadata. |

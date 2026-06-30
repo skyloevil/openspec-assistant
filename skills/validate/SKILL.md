@@ -35,6 +35,7 @@ This checks:
 - All active artifacts exist
 - All tasks are marked complete
 - Required hooks are complete
+- Completed tasks have structured validation evidence when the loop state is active
 
 ### Step 2: Manual Validation Checks
 Beyond the automated checks, also verify:
@@ -52,6 +53,12 @@ Beyond the automated checks, also verify:
 **Code Quality:**
 - Are there any obvious issues (hard-coded values, security concerns)?
 - Are tests added for new functionality?
+
+Record each concrete validation result with `openspec_record_validation_evidence`.
+Use evidence type `test`, `lint`, `typecheck`, `manual`, `hook`,
+`spec_alignment`, or `ci`. A task should not be treated as fully accepted until
+its required behavior has passed evidence or a human review explicitly accepts
+the gap.
 
 ### Step 3: Report Results
 Present findings to the user in a structured format:
@@ -73,7 +80,10 @@ If issues are found:
 ### Step 5: Transition
 Once validation passes:
 - State is ready for archive phase
-- Call `openspec_set_gate({ gate: "validation", confirmed: true })` after clean validation and human confirmation.
+- For loop-driven changes, request or resolve the validation review through
+  `openspec_request_human_review` / `openspec_resolve_human_review`.
+- For legacy flow, call `openspec_set_gate({ gate: "validation", confirmed: true })`
+  after clean validation and human confirmation.
 - Tell user they can run `openspec:archive` to finalize
 
 ## Output
