@@ -36,8 +36,8 @@
       "Continue the current Codex SDD Loop implementation"
     ],
     "brandColor": "#2563EB",
-    "composerIcon": "./assets/project-hero.png",
-    "logo": "./assets/project-hero.png",
-    "logoDark": "./assets/project-hero.png"
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png",
+    "logoDark": "./assets/logo-dark.png"
   }
 }

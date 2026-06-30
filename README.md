@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Spec-driven development for Codex. Turn feature requests into proposals, specs, tasks, validation evidence, and archived engineering knowledge.
+  Spec-driven loop engineering for Codex. Turn feature requests into goals, proposals, specs, tasks, validation evidence, human-reviewed gates, and archived engineering knowledge.
 </p>
 
 <p align="center">
@@ -19,23 +19,26 @@
 
 ## What is Codex SDD Loop?
 
-Codex SDD Loop is a Codex plugin that brings the OpenSpec development loop into everyday AI-assisted engineering. Instead of jumping directly from a prompt to code, it keeps every change inside a traceable workflow:
+Codex SDD Loop is a Codex plugin that brings spec-driven development and loop engineering into everyday AI-assisted engineering. Instead of jumping directly from a prompt to code, it keeps every change inside a traceable workflow with a goal-compatible runtime:
 
 1. **Propose** - clarify scope, background, out-of-scope work, and acceptance criteria.
 2. **Plan** - generate specs, design notes, task lists, verification plans, and implementation notes.
-3. **Implement** - work through tasks with durable progress tracking.
-4. **Validate** - check artifacts, task completion, hooks, and spec-vs-code drift.
-5. **Archive** - preserve the finished change and accumulate project knowledge.
+3. **Loop** - continue through act, validate, hook, human review, archive, complete, or blocked decisions.
+4. **Implement** - work through tasks with durable progress tracking and iteration records.
+5. **Validate** - check artifacts, tasks, hooks, structured evidence, and spec-vs-code drift.
+6. **Archive** - preserve artifacts, loop state, validation evidence, and accumulated project knowledge.
 
-The plugin is built around Codex skills plus a local MCP server. Skills guide the agent's behavior; the MCP server creates files, maintains workflow state, validates changes, and exposes status/continuation tools.
+The plugin is built around Codex skills plus a local MCP server. Skills guide the agent's behavior; the MCP server creates files, maintains workflow and loop state, validates changes, records evidence, enforces blocked/complete rules, and exposes status/continuation tools.
 
 ## Why use it?
 
 - **Human gates where they matter** - review scope, design, validation, and archive readiness before the workflow advances.
+- **Goal-compatible loop runtime** - track objective, success criteria, status, usage, blockers, validation evidence, human reviews, and next decisions.
+- **Evidence-first validation** - completed tasks require structured validation evidence before archive.
 - **Resumable work** - interrupted sessions can continue from `.openspec-codex/state.json` without re-explaining the change.
 - **Change-scoped artifacts** - every feature or fix lives under `openspec/changes/<changeId>/`.
 - **Custom team process** - project config, schemas, templates, rules, and hooks can be adapted to your engineering workflow.
-- **Audit-friendly output** - proposals, specs, tasks, verification evidence, and archives stay in your repository.
+- **Audit-friendly output** - proposals, specs, tasks, loop state, human reviews, verification evidence, and archives stay in your repository.
 
 ## Quick Start
 
@@ -99,6 +102,8 @@ Use Codex SDD Loop to show status
 Use Codex SDD Loop to continue
 ```
 
+For loop-driven work, use the continue entry point repeatedly. The runtime will decide whether the next step is implementation, validation, hook execution, human review, archive, completion, or blocked review.
+
 ## Optional TAPD Requirement Import
 
 Codex SDD Loop includes an optional `tapd-requirement` MCP adapter that can fetch a TAPD story before proposal generation. This is useful when the source requirement lives in TAPD and the Codex prompt only contains a story URL.
@@ -135,7 +140,7 @@ Codex SDD Loop ships with focused Codex skills:
 | `propose` | Create or refine the proposal and confirm scope. |
 | `plan` | Produce specs, design, task, verification, and implementation artifacts. |
 | `implement` | Execute tasks while updating progress and implementation notes. |
-| `validate` | Check required artifacts, task completion, hooks, and drift. |
+| `validate` | Check required artifacts, task completion, hooks, structured evidence, and drift. |
 | `archive` | Move completed work into the archive and knowledge base. |
 | `status` | Summarize active change state and next action. |
 | `continue` | Resume from the state machine. |
@@ -162,7 +167,7 @@ The MCP server exposes structured tools used by the skills and by Codex:
 | `openspec_resolve_human_review` | Resolve a pending human review and map approved core reviews back to OpenSpec gates. |
 | `openspec_update_goal_status` | Mark a loop complete, blocked, or cancelled while enforcing completion and blocker rules. |
 | `openspec_update_task` | Mark task checkboxes complete or reopen them. |
-| `openspec_validate` | Validate artifact presence, task status, and required hooks. |
+| `openspec_validate` | Validate artifact presence, task status, required hooks, and loop validation evidence. |
 | `openspec_archive_change` | Archive the active change and record knowledge-base metadata. |
 | `openspec_get_pending_hooks` | List configured hooks for a workflow point. |
 | `openspec_record_hook_result` | Record hook results in state and verification evidence. |
@@ -173,25 +178,31 @@ The MCP server exposes structured tools used by the skills and by Codex:
 flowchart LR
     A["Requirement"] --> B["Propose"]
     B --> C{"Scope approved?"}
-    C -->|Yes| D["Plan"]
     C -->|No| B
+    C -->|Yes| D["Plan"]
     D --> E{"Design approved?"}
-    E -->|Yes| F["Implement"]
     E -->|No| D
-    F --> G["Validate"]
-    G --> H{"Checks pass?"}
-    H -->|No| F
-    H -->|Yes| I["Archive"]
-    I --> J["Knowledge Base"]
+    E -->|Yes| L["Loop decision"]
+    L --> ACT["Act on next task"]
+    ACT --> EVID["Record iteration + validation evidence"]
+    EVID --> L
+    L --> VAL["Validate artifacts, tasks, hooks, evidence"]
+    VAL -->|Drift found| ACT
+    VAL -->|Clean| H{"Human validation review?"}
+    H -->|Needs review| HR["Human review gate"]
+    HR --> L
+    H -->|Approved| ARCH["Archive"]
+    ARCH --> KB["Knowledge base + loop audit"]
+    L --> BLOCK["Blocked review"]
 ```
 
 ## State Model
 
-Workflow state is stored in `.openspec-codex/state.json`. Version 2 supports multiple tracked changes with one active change:
+Workflow state is stored in `.openspec-codex/state.json`. Version 3 supports multiple tracked changes with one active change and an optional loop state:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "activeChangeId": "add-user-avatar-upload-20260627",
   "changes": {
     "add-user-avatar-upload-20260627": {
@@ -208,6 +219,32 @@ Workflow state is stored in `.openspec-codex/state.json`. Version 2 supports mul
         "validation": false,
         "archive": false
       },
+      "loop": {
+        "objective": "Add user avatar upload",
+        "successCriteria": [
+          "All required OpenSpec tasks are completed.",
+          "Required validation evidence is recorded.",
+          "Required hooks pass or are explicitly reviewed."
+        ],
+        "status": "running",
+        "mode": "review",
+        "usage": {
+          "iterations": 3,
+          "startedAt": "2026-06-27T00:00:00.000Z",
+          "updatedAt": "2026-06-27T00:15:00.000Z"
+        },
+        "lastDecision": {
+          "kind": "validate",
+          "reason": "Validation has not been confirmed.",
+          "nextAction": "Run validation and request validation review when clean.",
+          "riskLevel": "medium",
+          "requiredGate": "validation_review"
+        },
+        "blockers": [],
+        "validationEvidence": [],
+        "humanReviews": [],
+        "iterations": []
+      },
       "nextAction": "Implement the next incomplete task."
     }
   },
@@ -215,7 +252,7 @@ Workflow state is stored in `.openspec-codex/state.json`. Version 2 supports mul
 }
 ```
 
-This file is intentionally project-local so Codex can resume an interrupted OpenSpec workflow.
+This file is intentionally project-local so Codex can resume an interrupted workflow. Version 2 state files are migrated to version 3 on read while preserving existing change data.
 
 ## Customization
 
@@ -242,6 +279,7 @@ You can customize:
 - **Templates** - define team-specific proposal, spec, design, task, verification, and notes formats.
 - **Rules** - require architecture, compatibility, API, persistence, caching, or testing constraints.
 - **Hooks** - call MCP tools, commands, or skills before and after workflow steps.
+- **Human reviews** - require explicit approval for scope, design, validation, archive, destructive changes, external writes, security-sensitive changes, or blocked work.
 
 Example hook configuration:
 
@@ -252,6 +290,19 @@ hooks:
       name: implementation-notes-backfill
       required: true
 ```
+
+Hook results are recorded with `openspec_record_hook_result`. Required `pre_archive` hooks block archive until they pass or are explicitly skipped. For loop-driven changes, validation evidence is recorded with `openspec_record_validation_evidence` and archived alongside metadata.
+
+## Loop Semantics
+
+Codex SDD Loop exposes a small goal-compatible runtime:
+
+- `openspec_create_goal` creates or replaces the loop objective and success criteria.
+- `openspec_continue_loop` returns the next structured decision: `act`, `validate`, `run_hook`, `ask_human`, `archive`, `complete`, or `blocked`.
+- `openspec_update_goal_status` enforces terminal state rules. A goal cannot be marked `complete` before the change is archived, and the same blocker must recur three times before the loop can be marked `blocked`.
+- `openspec_request_human_review` and `openspec_resolve_human_review` keep manual approval inside the same auditable state model.
+
+The MCP server does not directly execute arbitrary shell commands for hooks. It provides scheduling, state, evidence, and review records; the Codex agent or a business-specific MCP tool performs the actual action and writes the result back.
 
 ## Development
 
