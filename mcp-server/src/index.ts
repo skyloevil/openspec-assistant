@@ -36,6 +36,7 @@ import {
   validateDrift,
 } from './openspec.js';
 import { readState, resolveProjectRoot } from './state.js';
+import { fetchTapdStory } from './tapd.js';
 import type { ArtifactId, GateMode, HookKind, HookStatus, HumanGate, HumanReviewRecord, Preset, ResponseFormat, ValidationEvidenceStatus, ValidationEvidenceType } from './types.js';
 
 const server = new Server(
@@ -157,6 +158,27 @@ const TOOL_DEFINITIONS = [
         schema: { type: 'string' },
         response_format: responseFormatSchema,
       },
+    },
+  },
+  {
+    name: 'openspec_fetch_tapd_story',
+    description: 'Fetch a TAPD story requirement by TAPD story URL or by workspaceId and storyId.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workDir: workDirSchema,
+        url: {
+          type: 'string',
+          description: 'TAPD story detail URL, for example https://www.tapd.cn/tapd_fe/47034349/story/detail/1147034349001283046',
+        },
+        workspaceId: { type: 'string', description: 'TAPD workspace id. Optional when url is provided.' },
+        storyId: { type: 'string', description: 'TAPD story id. Optional when url is provided.' },
+        response_format: responseFormatSchema,
+      },
+      anyOf: [
+        { required: ['url'] },
+        { required: ['workspaceId', 'storyId'] },
+      ],
     },
   },
   {
@@ -395,7 +417,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const responseFormat = (args.response_format as ResponseFormat | undefined) || 'json';
 
   try {
-    const data = dispatchTool(name, args, projectRoot);
+    const data = await dispatchTool(name, args, projectRoot);
     return {
       content: [{ type: 'text', text: formatToolResponse(data, responseFormat) }],
     };
@@ -408,7 +430,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-function dispatchTool(name: string, args: Record<string, unknown>, projectRoot: string): unknown {
+async function dispatchTool(name: string, args: Record<string, unknown>, projectRoot: string): Promise<unknown> {
   switch (name) {
     case 'openspec_detect_layout':
     case 'detect_spec_layout':
@@ -455,6 +477,12 @@ function dispatchTool(name: string, args: Record<string, unknown>, projectRoot: 
         outOfScope: args.outOfScope as string | undefined,
         preset: args.preset as Preset | undefined,
         schema: args.schema as string | undefined,
+      });
+    case 'openspec_fetch_tapd_story':
+      return fetchTapdStory(projectRoot, {
+        url: args.url as string | undefined,
+        workspaceId: args.workspaceId as string | undefined,
+        storyId: args.storyId as string | undefined,
       });
     case 'create_proposal':
       return createProposal(projectRoot, args.description as string, args.background as string | undefined, args.outOfScope as string | undefined);
