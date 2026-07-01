@@ -14,13 +14,13 @@ function tmpProject(): string {
 
 test('parses TAPD story URL and explicit ids', () => {
   const parsed = parseTapdStoryInput({
-    url: 'https://www.tapd.cn/tapd_fe/47034349/story/detail/1147034349001276098',
+    url: 'https://www.tapd.cn/tapd_fe/12345678/story/detail/1000000000000000001',
   });
-  assert.equal(parsed.workspaceId, '47034349');
-  assert.equal(parsed.storyId, '1147034349001276098');
+  assert.equal(parsed.workspaceId, '12345678');
+  assert.equal(parsed.storyId, '1000000000000000001');
 
-  const explicit = parseTapdStoryInput({ workspaceId: '47034349', storyId: '1147034349001276098' });
-  assert.equal(explicit.sourceUrl, 'https://www.tapd.cn/tapd_fe/47034349/story/detail/1147034349001276098');
+  const explicit = parseTapdStoryInput({ workspaceId: '12345678', storyId: '1000000000000000001' });
+  assert.equal(explicit.sourceUrl, 'https://www.tapd.cn/tapd_fe/12345678/story/detail/1000000000000000001');
 });
 
 test('fetches and normalizes a TAPD story using local env credentials', async () => {
@@ -38,17 +38,17 @@ test('fetches and normalizes a TAPD story using local env credentials', async ()
   delete process.env.TAPD_API_PASSWORD;
 
   globalThis.fetch = (async (url, init) => {
-    assert.equal(String(url), 'https://api.tapd.cn/stories?workspace_id=47034349&id=1147034349001276098');
+    assert.equal(String(url), 'https://api.tapd.cn/stories?workspace_id=12345678&id=1000000000000000001');
     assert.match(String(init?.headers?.Authorization), /^Basic /);
     return new Response(JSON.stringify({
       status: 1,
       data: [{
         Story: {
-          id: '1147034349001276098',
-          name: '第三方登录头像坏链问题解决方案',
-          description: '<p>需求背景</p><p>第三方头像链接过期后展示坏链</p>',
+          id: '1000000000000000001',
+          name: '示例 TAPD 需求标题',
+          description: '<p>需求背景</p><p>示例需求描述</p>',
           custom_field_six: 'P3',
-          owner: '李帅锋;',
+          owner: 'example-owner;',
         },
       }],
     }));
@@ -56,15 +56,15 @@ test('fetches and normalizes a TAPD story using local env credentials', async ()
 
   try {
     const result = await fetchTapdStory(root, {
-      url: 'https://www.tapd.cn/tapd_fe/47034349/story/detail/1147034349001276098',
+      url: 'https://www.tapd.cn/tapd_fe/12345678/story/detail/1000000000000000001',
     }) as {
       proposalInput: { title: string; descriptionText: string; priority: string; owner: string };
     };
 
-    assert.equal(result.proposalInput.title, '第三方登录头像坏链问题解决方案');
+    assert.equal(result.proposalInput.title, '示例 TAPD 需求标题');
     assert.equal(result.proposalInput.priority, 'P3');
-    assert.equal(result.proposalInput.owner, '李帅锋;');
-    assert.match(result.proposalInput.descriptionText, /第三方头像链接过期/);
+    assert.equal(result.proposalInput.owner, 'example-owner;');
+    assert.match(result.proposalInput.descriptionText, /示例需求描述/);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalUser === undefined) delete process.env.TAPD_API_USER;

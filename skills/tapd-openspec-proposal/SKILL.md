@@ -12,9 +12,9 @@ Use `openspec_fetch_tapd_story` from the main `codex-sdd-loop` MCP server to fet
 ## Workflow
 
 1. Extract TAPD input from the user message:
-   - URL example: `https://www.tapd.cn/tapd_fe/47034349/story/detail/1147034349001283046`
-   - Parsed workspace id: `47034349`
-   - Parsed story id: `1147034349001283046`
+   - URL example: `https://www.tapd.cn/tapd_fe/12345678/story/detail/1000000000000000001`
+   - Parsed workspace id: `12345678`
+   - Parsed story id: `1000000000000000001`
 2. Call MCP tool `openspec_fetch_tapd_story` with either:
    - `{ "url": "<tapd story url>" }`
    - `{ "workspaceId": "<workspace id>", "storyId": "<story id>" }`

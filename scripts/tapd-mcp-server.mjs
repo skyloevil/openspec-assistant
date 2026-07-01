@@ -54,7 +54,7 @@ async function handleMessage(line) {
             properties: {
               url: {
                 type: 'string',
-                description: 'TAPD story detail URL, for example https://www.tapd.cn/tapd_fe/47034349/story/detail/1147034349001283046',
+                description: 'TAPD story detail URL, for example https://www.tapd.cn/tapd_fe/12345678/story/detail/1000000000000000001',
               },
               workspaceId: {
                 type: 'string',

@@ -27,21 +27,21 @@ The adapter accepts either a TAPD story URL or explicit ids.
 Example:
 
 ```text
-https://www.tapd.cn/tapd_fe/47034349/story/detail/1147034349001283046
+https://www.tapd.cn/tapd_fe/12345678/story/detail/1000000000000000001
 ```
 
 Parsed values:
 
 ```text
-workspace_id = 47034349
-story_id = 1147034349001283046
+workspace_id = 12345678
+story_id = 1000000000000000001
 ```
 
 MCP tool call:
 
 ```json
 {
-  "url": "https://www.tapd.cn/tapd_fe/47034349/story/detail/1147034349001283046"
+  "url": "https://www.tapd.cn/tapd_fe/12345678/story/detail/1000000000000000001"
 }
 ```
 
