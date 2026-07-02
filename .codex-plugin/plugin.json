@@ -4,9 +4,9 @@
   "description": "Spec-driven loop engineering runtime for Codex: propose, plan, implement, validate, archive, and continue with evidence.",
   "author": {
     "name": "ZITIAN ZHAO",
-    "url": "https://github.com/ideazw"
+    "url": "https://github.com/skyloevil"
   },
-  "repository": "https://github.com/ideazw/codex-sdd-loop",
+  "repository": "https://github.com/skyloevil/codex-sdd-loop",
   "license": "MIT",
   "keywords": [
     "openspec",
