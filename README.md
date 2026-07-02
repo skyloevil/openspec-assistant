@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ideazw/codex-sdd-loop/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <a href="https://github.com/ideazw/codex-sdd-loop"><img alt="Codex Plugin" src="https://img.shields.io/badge/Codex-plugin-2563EB"></a>
+  <a href="https://github.com/skyloevil/codex-sdd-loop/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <a href="https://github.com/skyloevil/codex-sdd-loop"><img alt="Codex Plugin" src="https://img.shields.io/badge/Codex-plugin-2563EB"></a>
   <a href="./mcp-server/package.json"><img alt="Node.js 18+" src="https://img.shields.io/badge/node-%3E%3D18-339933"></a>
   <a href="https://modelcontextprotocol.io"><img alt="MCP" src="https://img.shields.io/badge/MCP-server-111827"></a>
 </p>
@@ -50,7 +50,7 @@ The plugin is built around Codex skills plus a local MCP server. Skills guide th
 ### Install from GitHub
 
 ```bash
-git clone https://github.com/ideazw/codex-sdd-loop.git
+git clone https://github.com/skyloevil/codex-sdd-loop.git
 cd codex-sdd-loop
 ```
 
