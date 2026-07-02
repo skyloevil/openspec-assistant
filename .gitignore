@@ -1,5 +1,7 @@
 node_modules/
 dist/
+!mcp-server/dist/
+!mcp-server/dist/index.js
 .mcp-server-env/
 .tapd.env.local
 *.log
