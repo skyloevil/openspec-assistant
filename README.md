@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/skyloevil/codex-sdd-loop/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <a href="https://github.com/skyloevil/codex-sdd-loop"><img alt="Codex Plugin" src="https://img.shields.io/badge/Codex-plugin-2563EB"></a>
+  <a href="https://github.com/ideazw/codex-sdd-loop/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <a href="https://github.com/ideazw/codex-sdd-loop"><img alt="Codex Plugin" src="https://img.shields.io/badge/Codex-plugin-2563EB"></a>
   <a href="./mcp-server/package.json"><img alt="Node.js 18+" src="https://img.shields.io/badge/node-%3E%3D18-339933"></a>
   <a href="https://modelcontextprotocol.io"><img alt="MCP" src="https://img.shields.io/badge/MCP-server-111827"></a>
 </p>
@@ -45,16 +45,13 @@ The plugin is built around Codex skills plus a local MCP server. Skills guide th
 ### Prerequisites
 
 - Codex desktop app with local plugin support
-- Node.js 18 or newer
-- npm 9 or newer
+- Node.js 18 or newer available on `PATH`
 
 ### Install from GitHub
 
 ```bash
-git clone https://github.com/skyloevil/codex-sdd-loop.git
+git clone https://github.com/ideazw/codex-sdd-loop.git
 cd codex-sdd-loop
-npm install --prefix mcp-server
-npm run build --prefix mcp-server
 ```
 
 Install the plugin from the Codex app:
@@ -68,7 +65,9 @@ Install the plugin from the Codex app:
 
 The repository is self-contained as a local Codex marketplace. The marketplace file is in
 `.agents/plugins/marketplace.json`, the plugin manifest is in `.codex-plugin/plugin.json`, and the
-MCP server configuration is in `.mcp.json`.
+MCP server configuration is in `.mcp.json`. The MCP runtime is bundled at
+`mcp-server/dist/index.js`, so installing the plugin does not require running `npm install` or
+`npm run build`.
 
 ## Basic Usage
 
@@ -309,6 +308,8 @@ Codex SDD Loop exposes a small goal-compatible runtime:
 The MCP server does not directly execute arbitrary shell commands for hooks. It provides scheduling, state, evidence, and review records; the Codex agent or a business-specific MCP tool performs the actual action and writes the result back.
 
 ## Development
+
+Development requires Node.js 18 or newer and npm 9 or newer.
 
 Install dependencies:
 
