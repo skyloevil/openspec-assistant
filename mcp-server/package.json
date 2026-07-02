@@ -1,6 +1,6 @@
 {
   "name": "codex-sdd-loop",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "MCP server for Codex SDD Loop - spec-driven loop engineering runtime for Codex",
   "type": "module",
   "bin": {

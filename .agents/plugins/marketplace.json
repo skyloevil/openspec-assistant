@@ -1,0 +1,20 @@
+{
+  "name": "codex-sdd-loop",
+  "interface": {
+    "displayName": "Codex SDD Loop"
+  },
+  "plugins": [
+    {
+      "name": "codex-sdd-loop",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

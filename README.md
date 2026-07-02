@@ -57,96 +57,18 @@ npm install --prefix mcp-server
 npm run build --prefix mcp-server
 ```
 
-Install the cloned plugin into your personal Codex marketplace:
+Install the plugin from the Codex app:
 
-```bash
-./scripts/install-local-plugin.sh
-```
+1. Open the cloned `codex-sdd-loop` folder as a project in the Codex app.
+2. Restart Codex so it picks up the repository marketplace at `.agents/plugins/marketplace.json`.
+3. Open **Plugins** in the sidebar.
+4. Select the **Codex SDD Loop** marketplace/source.
+5. Open **Codex SDD Loop** and choose **Add to Codex**.
+6. Start a new Codex thread so the plugin skills and MCP tools load.
 
-The installer safely creates or updates `~/.agents/plugins/marketplace.json`, registers this local
-checkout as `codex-sdd-loop`, and then runs:
-
-```bash
-codex plugin add codex-sdd-loop@personal
-```
-
-If the Codex CLI is not on your `PATH`, the script still updates the marketplace file and prints the
-command to run manually. To update the marketplace without running the Codex CLI, use:
-
-```bash
-./scripts/install-local-plugin.sh --no-install
-```
-
-Finally, restart Codex or start a new Codex thread so that the plugin skills and MCP tools are
-loaded. The plugin manifest is in `.codex-plugin/plugin.json`, and the MCP server configuration is
-in `.mcp.json`.
-
-#### Manual personal marketplace setup
-
-If you prefer to install manually, register the cloned plugin in your personal Codex marketplace.
-First, print the plugin path relative to your home directory:
-
-```bash
-python3 -c 'import os; print("./" + os.path.relpath(os.getcwd(), os.path.expanduser("~")))'
-```
-
-For example, if the repository is located at
-`~/Code/agent/plugins/codex-sdd/codex-sdd-loop`, the command prints:
-
-```text
-./Code/agent/plugins/codex-sdd/codex-sdd-loop
-```
-
-Create `~/.agents/plugins/marketplace.json` if it does not already exist:
-
-```bash
-mkdir -p ~/.agents/plugins
-```
-
-Then use the printed path as `source.path`:
-
-```json
-{
-  "name": "personal",
-  "interface": {
-    "displayName": "Personal"
-  },
-  "plugins": [
-    {
-      "name": "codex-sdd-loop",
-      "source": {
-        "source": "local",
-        "path": "./Code/agent/plugins/codex-sdd/codex-sdd-loop"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Developer Tools"
-    }
-  ]
-}
-```
-
-If `~/.agents/plugins/marketplace.json` already exists, append the `codex-sdd-loop` entry to its
-existing `plugins` array instead of replacing the file. The path must start with `./` and is resolved
-relative to your home directory, not relative to the directory containing `marketplace.json`.
-
-Restart Codex, then install the plugin using either method:
-
-- Open **Plugins**, select the **Personal** marketplace, open **Codex SDD Loop**, and choose
-  **Add to Codex**.
-- Or install it from the command line:
-
-  ```bash
-  codex plugin add codex-sdd-loop@personal
-  ```
-
-Verify the installation with:
-
-```bash
-codex plugin list
-```
+The repository is self-contained as a local Codex marketplace. The marketplace file is in
+`.agents/plugins/marketplace.json`, the plugin manifest is in `.codex-plugin/plugin.json`, and the
+MCP server configuration is in `.mcp.json`.
 
 ## Basic Usage
 
