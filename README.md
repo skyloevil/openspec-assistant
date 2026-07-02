@@ -69,6 +69,16 @@ MCP server configuration is in `.mcp.json`. The MCP runtime is bundled at
 `mcp-server/dist/index.js`, so installing the plugin does not require running `npm install` or
 `npm run build`.
 
+### Bundled MCP Runtime
+
+This repository commits `mcp-server/dist/index.js` intentionally. Codex App installs local plugins
+from the cloned repository, so the bundled runtime lets users install the plugin without first
+installing npm dependencies or building TypeScript sources.
+
+The bundled file is generated from `mcp-server/src/`. If you change MCP server source code, rebuild
+the runtime and commit the updated `mcp-server/dist/index.js` together with the source and tests.
+This keeps the code reviewers' source view and the runtime used by Codex App in sync.
+
 ## Basic Usage
 
 Start with a request in Codex:
@@ -323,6 +333,12 @@ Build the MCP server:
 npm run build --prefix mcp-server
 ```
 
+Check that the committed runtime matches the current source:
+
+```bash
+git diff --exit-code -- mcp-server/dist/index.js
+```
+
 Run tests:
 
 ```bash
@@ -347,6 +363,8 @@ codex-sdd-loop/
     logo.png
     logo-dark.png
   mcp-server/
+    dist/
+      index.js
     src/
       index.ts
       openspec.ts
@@ -380,8 +398,13 @@ Contributions are welcome. Please keep changes spec-driven:
 
 1. Open an issue or proposal describing the behavior change.
 2. Add or update tests for MCP server behavior when applicable.
-3. Run `npm test --prefix mcp-server`.
-4. Keep generated dependencies such as `node_modules/` out of commits.
+3. If you changed `mcp-server/src/`, run `npm run build --prefix mcp-server` and commit the updated `mcp-server/dist/index.js`.
+4. Run `npm test --prefix mcp-server`.
+5. Run `git diff --exit-code -- mcp-server/dist/index.js` after building to verify the committed runtime is current.
+6. Keep generated dependencies such as `node_modules/` out of commits.
+
+CI should enforce the same source/runtime sync check by installing dependencies, rebuilding the MCP
+server, and failing if `mcp-server/dist/index.js` changes.
 
 ## License
 
