@@ -41,6 +41,11 @@ Check that all key artifacts are present:
 Before archiving, call `openspec_get_pending_hooks({ hookPoint: "pre_archive" })`.
 Required hooks must be recorded as passed or skipped with `openspec_record_hook_result`.
 
+Before calling `openspec_archive_change`, call `openspec_sync_specs` for the relevant
+domain names so the change delta is appended to `openspec/specs/<domain>/spec.md`.
+If the domain is unknown, use `general`. Then call `docs_check_freshness`; unresolved
+stale domain specs should block archive unless the user explicitly accepts the gap.
+
 Call `openspec_archive_change` with an optional summary message:
 
 ```
@@ -54,7 +59,8 @@ This:
 2. Writes `archive-metadata.json` with timestamps and paths
 3. Adds an entry to `openspec/changes/archive/_knowledge-base/<changeId>.json`
    for the accumulated knowledge base
-4. Resets the state machine to `complete` phase
+4. Preserves the main domain spec sync metadata in state
+5. Resets the state machine to `complete` phase
 
 ### Step 4: Summarize
 Present the archive summary:

@@ -27,7 +27,13 @@ Any of these patterns triggers this skill:
 ### Step 1: Read the Proposal
 Call `openspec_read_artifact({ artifactId: "proposal" })` to understand the requirement scope and constraints.
 
-### Step 2: Generate Design
+### Step 2: Build Context
+Call `docs_build_context` using keywords from the proposal. Include likely spec
+domains and modules when known. The design should cite relevant source paths from
+`openspec/specs`, `docs/generated`, `docs/reviewed`, or `docs/knowledge` when they
+affect interfaces, compatibility, risks, or task sequencing.
+
+### Step 3: Generate Design
 Use `openspec_create_or_update_artifact` with detailed technical analysis:
 
 ```
@@ -49,7 +55,7 @@ design covering:
 
 Write the full design to `openspec/changes/<changeId>/design.md`.
 
-### Step 3: Generate Tasks
+### Step 4: Generate Tasks
 After design is created, generate tasks:
 
 ```
@@ -61,7 +67,7 @@ openspec_create_or_update_artifact({
 
 This creates or updates `openspec/changes/<changeId>/tasks.md` with check-box tasks.
 
-### Step 4: Present Design for Review
+### Step 5: Present Design for Review
 **Gate: Design Confirmation** — This is a key human-in-the-loop point.
 Present the design to the user and ask for confirmation:
 - "Here is the technical design. Does this look correct?"
@@ -69,7 +75,7 @@ Present the design to the user and ask for confirmation:
 - If the user requests changes, update the design and regenerate tasks
 - If approved, mark the design as confirmed
 
-### Step 5: Transition
+### Step 6: Transition
 Once design is confirmed:
 1. Call `openspec_set_gate({ gate: "design", confirmed: true })`
 2. Tell user they can proceed to implementation with `openspec:implement`

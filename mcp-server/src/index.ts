@@ -14,6 +14,8 @@ import {
   createOrUpdateArtifact,
   createProposal,
   createTasks,
+  buildDocsContext,
+  checkDocsFreshness,
   continueLoop,
   detectLayout,
   formatToolResponse,
@@ -29,8 +31,10 @@ import {
   recordHookResult,
   requestHumanReview,
   resolveHumanReview,
+  searchDocs,
   setGate,
   summarizeNext,
+  syncSpecs,
   updateGoalStatus,
   updateTaskStatus,
   validateDrift,
@@ -120,6 +124,76 @@ const TOOL_DEFINITIONS = [
       properties: {
         workDir: workDirSchema,
         artifactId: { type: 'string', enum: ['proposal', 'specs', 'design', 'tasks', 'verification', 'implementation_notes'] },
+        changeId: { type: 'string' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'docs_search',
+    description: 'Search openspec specs and docs/generated, docs/reviewed, docs/knowledge markdown files.',
+    inputSchema: {
+      type: 'object',
+      required: ['query'],
+      properties: {
+        workDir: workDirSchema,
+        query: { type: 'string' },
+        layers: { type: 'array', items: { type: 'string', enum: ['openspec', 'generated', 'reviewed', 'knowledge'] } },
+        limit: { type: 'number' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'knowledge_search',
+    description: 'Search docs/knowledge markdown files for historical pitfalls, decisions, and compatibility notes.',
+    inputSchema: {
+      type: 'object',
+      required: ['query'],
+      properties: {
+        workDir: workDirSchema,
+        query: { type: 'string' },
+        limit: { type: 'number' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'docs_build_context',
+    description: 'Build a bounded context pack from openspec project guidance, domain specs, generated docs, reviewed docs, and knowledge.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workDir: workDirSchema,
+        query: { type: 'string' },
+        domains: { type: 'array', items: { type: 'string' } },
+        modules: { type: 'array', items: { type: 'string' } },
+        maxBytes: { type: 'number' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'docs_check_freshness',
+    description: 'Check whether main openspec domain specs include the active change.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workDir: workDirSchema,
+        domains: { type: 'array', items: { type: 'string' } },
+        changeId: { type: 'string' },
+        response_format: responseFormatSchema,
+      },
+    },
+  },
+  {
+    name: 'openspec_sync_specs',
+    description: 'Append active change delta specs into main openspec/specs/<domain>/spec.md files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workDir: workDirSchema,
+        domains: { type: 'array', items: { type: 'string' } },
         changeId: { type: 'string' },
         response_format: responseFormatSchema,
       },
@@ -460,6 +534,35 @@ async function dispatchTool(name: string, args: Record<string, unknown>, project
     case 'openspec_read_artifact':
       return readArtifact(projectRoot, {
         artifactId: args.artifactId as ArtifactId,
+        changeId: args.changeId as string | undefined,
+      });
+    case 'docs_search':
+      return searchDocs(projectRoot, {
+        query: args.query as string,
+        layers: args.layers as Array<'openspec' | 'generated' | 'reviewed' | 'knowledge'> | undefined,
+        limit: args.limit as number | undefined,
+      });
+    case 'knowledge_search':
+      return searchDocs(projectRoot, {
+        query: args.query as string,
+        layers: ['knowledge'],
+        limit: args.limit as number | undefined,
+      });
+    case 'docs_build_context':
+      return buildDocsContext(projectRoot, {
+        query: args.query as string | undefined,
+        domains: args.domains as string[] | undefined,
+        modules: args.modules as string[] | undefined,
+        maxBytes: args.maxBytes as number | undefined,
+      });
+    case 'docs_check_freshness':
+      return checkDocsFreshness(projectRoot, {
+        domains: args.domains as string[] | undefined,
+        changeId: args.changeId as string | undefined,
+      });
+    case 'openspec_sync_specs':
+      return syncSpecs(projectRoot, {
+        domains: args.domains as string[] | undefined,
         changeId: args.changeId as string | undefined,
       });
     case 'openspec_validate':

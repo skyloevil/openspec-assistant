@@ -11,6 +11,10 @@ import {
   createGoal,
   createOrUpdateArtifact,
   detectLayout,
+  buildDocsContext,
+  checkDocsFreshness,
+  searchDocs,
+  syncSpecs,
   getGoal,
   getNextActions,
   getPendingHooks,
@@ -63,6 +67,65 @@ test('creates a spec-driven project and change directory with default artifacts'
   assert.equal(state.changes[change.changeId].preset, 'full');
   assert.equal(state.changes[change.changeId].artifacts.proposal.status, 'done');
   assert.equal(state.changes[change.changeId].loop?.objective, 'Add avatar upload');
+});
+
+test('initializes docs layers and main specs directories', () => {
+  const root = tmpProject();
+
+  initProject(root, { schema: 'spec-driven' });
+
+  assert.equal(fs.existsSync(path.join(root, 'openspec/specs')), true);
+  assert.equal(fs.existsSync(path.join(root, 'openspec/project.md')), true);
+  assert.equal(fs.existsSync(path.join(root, 'openspec/AGENTS.md')), true);
+  assert.equal(fs.existsSync(path.join(root, 'docs/generated/global')), true);
+  assert.equal(fs.existsSync(path.join(root, 'docs/generated/modules')), true);
+  assert.equal(fs.existsSync(path.join(root, 'docs/reviewed/architecture')), true);
+  assert.equal(fs.existsSync(path.join(root, 'docs/reviewed/modules')), true);
+  assert.equal(fs.existsSync(path.join(root, 'docs/knowledge/global')), true);
+  assert.equal(fs.existsSync(path.join(root, 'docs/knowledge/modules')), true);
+});
+
+test('searches docs layers and builds a bounded context pack', () => {
+  const root = tmpProject();
+  initProject(root);
+  fs.writeFileSync(path.join(root, 'docs/knowledge/global/avatar.md'), 'Avatar upload uses image/webp compatibility notes.\n', 'utf-8');
+  fs.writeFileSync(path.join(root, 'docs/reviewed/architecture/media.md'), 'Media service owns avatar storage.\n', 'utf-8');
+  fs.mkdirSync(path.join(root, 'openspec/specs/avatar'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'openspec/specs/avatar/spec.md'), '# Avatar Spec\n\nExisting avatar requirements.\n', 'utf-8');
+
+  const search = searchDocs(root, { query: 'avatar', layers: ['knowledge', 'reviewed'], limit: 10 });
+  assert.equal(search.results.some((item) => item.path === 'docs/knowledge/global/avatar.md'), true);
+  assert.equal(search.results.some((item) => item.path === 'docs/reviewed/architecture/media.md'), true);
+
+  const context = buildDocsContext(root, { query: 'avatar upload', domains: ['avatar'], maxBytes: 800 });
+  assert.equal(context.sources.some((item) => item.path === 'openspec/project.md'), true);
+  assert.equal(context.sources.some((item) => item.path === 'openspec/specs/avatar/spec.md'), true);
+  assert.match(context.content, /Avatar Spec/);
+  assert.match(context.content, /compatibility notes/);
+});
+
+test('syncs change specs into domain specs and reports freshness', () => {
+  const root = tmpProject();
+  initProject(root);
+  const change = createChange(root, { description: 'Add avatar upload', preset: 'full' });
+  createOrUpdateArtifact(root, {
+    artifactId: 'specs',
+    content: '# Avatar Delta\n\n## ADDED Requirements\n\n### Requirement: Upload avatar\nThe system SHALL store avatar images.\n',
+  });
+
+  let freshness = checkDocsFreshness(root, { domains: ['avatar'] });
+  assert.equal(freshness.stale.length, 1);
+  assert.equal(freshness.stale[0].domain, 'avatar');
+
+  const synced = syncSpecs(root, { domains: ['avatar'] });
+  assert.equal(synced.updated.length, 1);
+  const mainSpec = fs.readFileSync(path.join(root, 'openspec/specs/avatar/spec.md'), 'utf-8');
+  assert.match(mainSpec, /Source change:/);
+  assert.match(mainSpec, new RegExp(change.changeId));
+  assert.match(mainSpec, /Upload avatar/);
+
+  freshness = checkDocsFreshness(root, { domains: ['avatar'] });
+  assert.equal(freshness.stale.length, 0);
 });
 
 test('migrates legacy single-change state into v2 state', () => {

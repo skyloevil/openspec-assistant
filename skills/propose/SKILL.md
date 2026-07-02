@@ -32,7 +32,13 @@ For ambiguous/complex requests, spend more time to nail scope before writing.
 Call the `openspec_detect_layout` tool to check if an OpenSpec structure already exists
 in the project. If one does, note the existing archives and specs as prior context.
 
-### Step 3: Create Proposal
+### Step 3: Build Context
+Call `docs_build_context` with the requirement keywords before creating the proposal.
+Also call `knowledge_search` for the same keywords to find prior pitfalls, decisions,
+and compatibility notes. Use cited source paths from the context pack in the proposal
+background or acceptance criteria when they affect scope.
+
+### Step 4: Create Proposal
 Call the `openspec_create_change` tool with the requirement description:
 
 ```
@@ -47,7 +53,7 @@ openspec_create_change({
 This generates `openspec/changes/<changeId>/proposal.md` plus the preset artifacts
 and sets up the v2 state machine.
 
-### Step 4: Present for Review
+### Step 5: Present for Review
 Present the generated proposal to the user. Highlight:
 - **Change ID**: So they can reference it later
 - **Scope**: What will and won't be done
@@ -59,7 +65,7 @@ Ask the user to confirm the scope with a clear yes/no question:
 - If yes: transition to the **plan** phase
 - If no: ask for clarifications and regenerate with `openspec_cancel_change` + fresh `openspec_create_change`
 
-### Step 5: After Confirmation
+### Step 6: After Confirmation
 Once scope is confirmed:
 1. Call `openspec_set_gate({ gate: "scope", confirmed: true })`
 2. Tell the user they can continue with `codex-sdd-loop:continue`

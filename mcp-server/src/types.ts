@@ -259,6 +259,7 @@ export interface OpenSpecStateV2 {
 export const OPENSPEC_SUBDIR = '.openspec-codex';
 export const STATE_FILE = `${OPENSPEC_SUBDIR}/state.json`;
 export const DEFAULT_OPENSPEC_DIR = 'openspec';
+export const DEFAULT_DOCS_DIR = 'docs';
 export const CHANGES_DIR = `${DEFAULT_OPENSPEC_DIR}/changes`;
 export const ARCHIVE_DIR = `${DEFAULT_OPENSPEC_DIR}/changes/archive`;
 

@@ -88,6 +88,10 @@ openspec/changes/add-user-avatar-upload-20260627/
   tasks.md
   verification.md
   implementation-notes.md
+openspec/specs/<domain>/spec.md
+docs/generated/
+docs/reviewed/
+docs/knowledge/
 ```
 
 After the proposal is reviewed, continue the flow:
@@ -165,6 +169,12 @@ The MCP server exposes structured tools used by the skills and by Codex:
 | `openspec_create_goal` | Create a goal-compatible loop state for the active change. |
 | `openspec_get_goal` | Return objective, loop status, usage, blockers, evidence, and next decision. |
 | `openspec_continue_loop` | Advance the loop to the next action, validation, hook, human review, archive, complete, or blocked decision. |
+| `openspec_read_artifact` | Read one active change artifact by artifact id. |
+| `docs_search` | Search OpenSpec specs and docs generated/reviewed/knowledge layers. |
+| `knowledge_search` | Search historical knowledge notes only. |
+| `docs_build_context` | Build a bounded context pack for propose, plan, and implementation work. |
+| `docs_check_freshness` | Check whether main domain specs include the active change. |
+| `openspec_sync_specs` | Append active change delta specs into `openspec/specs/<domain>/spec.md`. |
 | `openspec_record_iteration` | Record task execution feedback, files, commands, checks, errors, and evidence references. |
 | `openspec_record_validation_evidence` | Store structured validation evidence in state, `verification.md`, and `verification.json`. |
 | `openspec_request_human_review` | Create a pending human review gate for risk, validation, archive, or business approval. |
@@ -271,11 +281,74 @@ Generated configuration lives in:
 ```text
 openspec/
   config.yaml
+  project.md
+  AGENTS.md
+  specs/
+    <domain>/
+      spec.md
   schemas/
     spec-driven/
       schema.yaml
       templates/
+docs/
+  generated/
+    global/
+    modules/
+  reviewed/
+    architecture/
+    modules/
+    integration/
+    deployment/
+  knowledge/
+    global/
+    modules/
 ```
+
+Recommended project documentation layout:
+
+```text
+openspec/
+  project.md                    # Project-wide context: stack, architecture, constraints
+  AGENTS.md                     # Repository-specific agent guidance
+  config.yaml                   # Workflow config, rules, gates, and hooks
+  specs/
+    <domain>/
+      spec.md                   # Durable domain specification synced from archived changes
+  changes/
+    <changeId>/
+      proposal.md               # Scope, background, acceptance criteria
+      specs/spec.md             # Change-scoped delta spec
+      design.md                 # Technical design and compatibility notes
+      tasks.md                  # Executable task checklist
+      verification.md           # Human-readable validation notes
+      verification.json         # Structured validation evidence
+      implementation-notes.md   # Lessons, pitfalls, and implementation findings
+    archive/
+      <changeId>/               # Immutable archived change artifacts
+      _knowledge-base/          # Archive index metadata
+docs/
+  generated/
+    global/                     # Generated project indexes and dependency summaries
+    modules/<module>/           # Generated API, entrypoint, config, and module maps
+  reviewed/
+    architecture/               # Human-reviewed architecture docs and conventions
+    modules/<module>/           # Human-reviewed module docs
+    integration/                # Cross-system flow and API integration notes
+    deployment/                 # Runtime, rollout, and operational docs
+  knowledge/
+    global/                     # Cross-project pitfalls, decisions, compatibility notes
+    modules/<module>/           # Module-specific lessons and recurring issues
+```
+
+The `openspec/changes/<changeId>/` directory is the active working area for one
+change. Before archive, sync relevant delta specs into
+`openspec/specs/<domain>/spec.md` with `openspec_sync_specs`, then verify the
+main specs are current with `docs_check_freshness`.
+
+Use `docs_build_context` during proposal and planning to collect project context,
+domain specs, generated indexes, reviewed docs, and knowledge notes. Use
+`docs_search` for broad lookup and `knowledge_search` when looking specifically
+for past pitfalls or decisions.
 
 You can customize:
 

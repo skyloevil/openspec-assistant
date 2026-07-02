@@ -25,6 +25,7 @@ import type {
 import {
   ARCHIVE_DIR,
   CHANGES_DIR,
+  DEFAULT_DOCS_DIR,
   DEFAULT_OPENSPEC_DIR,
   DEFAULT_PROJECT_CONFIG,
 } from './types.js';
@@ -57,6 +58,17 @@ const PRESET_ARTIFACTS: Record<Preset, ArtifactId[]> = {
   tweak: ['proposal', 'tasks', 'verification', 'implementation_notes'],
 };
 
+const DOC_LAYER_DIRS = [
+  'docs/generated/global',
+  'docs/generated/modules',
+  'docs/reviewed/architecture',
+  'docs/reviewed/modules',
+  'docs/reviewed/integration',
+  'docs/reviewed/deployment',
+  'docs/knowledge/global',
+  'docs/knowledge/modules',
+];
+
 function ensureDir(dirPath: string): void {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -75,6 +87,12 @@ function writeFileSafe(filePath: string, content: string): boolean {
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, content, 'utf-8');
   return true;
+}
+
+function writeFileIfMissing(filePath: string, content: string): void {
+  if (!fs.existsSync(filePath)) {
+    writeFileSafe(filePath, content);
+  }
 }
 
 function safeJoin(projectRoot: string, relativePath: string): string {
@@ -161,6 +179,26 @@ function readProjectConfig(projectRoot: string): ProjectConfig {
     return structuredClone(DEFAULT_PROJECT_CONFIG);
   }
   return parseProjectConfig(raw);
+}
+
+function normalizePosix(value: string): string {
+  return value.split(path.sep).join(path.posix.sep);
+}
+
+function listMarkdownFiles(root: string, relativeDir: string): string[] {
+  const dir = safeJoin(root, relativeDir);
+  if (!fs.existsSync(dir)) return [];
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const childRel = path.posix.join(relativeDir, entry.name);
+    const childFull = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listMarkdownFiles(root, childRel));
+    } else if (entry.isFile() && /\.(md|mdx|txt)$/i.test(entry.name)) {
+      files.push(normalizePosix(path.relative(root, childFull)));
+    }
+  }
+  return files.sort();
 }
 
 function parseProjectConfig(raw: string): ProjectConfig {
@@ -668,6 +706,18 @@ export function initProject(
   const openspecDir = path.join(projectRoot, DEFAULT_OPENSPEC_DIR);
   ensureDir(openspecDir);
   ensureDir(path.join(projectRoot, CHANGES_DIR));
+  ensureDir(path.join(projectRoot, DEFAULT_OPENSPEC_DIR, 'specs'));
+  for (const dir of DOC_LAYER_DIRS) {
+    ensureDir(path.join(projectRoot, dir));
+  }
+  writeFileIfMissing(
+    path.join(openspecDir, 'project.md'),
+    '# Project Context\n\nRecord project architecture, technology choices, and cross-cutting constraints here.\n',
+  );
+  writeFileIfMissing(
+    path.join(openspecDir, 'AGENTS.md'),
+    '# Agent Guidance\n\nUse project specs, reviewed docs, generated docs, and knowledge notes before proposing or planning changes.\n',
+  );
   const configPath = path.join(openspecDir, 'config.yaml');
   if (options.overwrite || !fs.existsSync(configPath)) {
     writeFileSafe(configPath, configToYaml(config));
@@ -680,6 +730,156 @@ export function initProject(
     configPath: path.posix.join(DEFAULT_OPENSPEC_DIR, 'config.yaml'),
     schemaDir: path.posix.join(DEFAULT_OPENSPEC_DIR, 'schemas', config.schema),
   };
+}
+
+type DocsLayer = 'generated' | 'reviewed' | 'knowledge' | 'openspec';
+
+export function searchDocs(
+  projectRoot: string,
+  options: { query: string; layers?: DocsLayer[]; limit?: number },
+): { query: string; results: Array<{ path: string; layer: DocsLayer; preview: string }> } {
+  const terms = options.query.toLowerCase().split(/\s+/).filter(Boolean);
+  const layers: DocsLayer[] = options.layers?.length ? options.layers : ['openspec', 'generated', 'reviewed', 'knowledge'];
+  const roots: Record<DocsLayer, string[]> = {
+    openspec: [`${DEFAULT_OPENSPEC_DIR}/specs`, `${DEFAULT_OPENSPEC_DIR}/project.md`, `${DEFAULT_OPENSPEC_DIR}/AGENTS.md`],
+    generated: [`${DEFAULT_DOCS_DIR}/generated`],
+    reviewed: [`${DEFAULT_DOCS_DIR}/reviewed`],
+    knowledge: [`${DEFAULT_DOCS_DIR}/knowledge`],
+  };
+  const candidates: Array<{ path: string; layer: DocsLayer }> = [];
+  for (const layer of layers) {
+    for (const rootPath of roots[layer]) {
+      const full = safeJoin(projectRoot, rootPath);
+      if (!fs.existsSync(full)) continue;
+      if (fs.statSync(full).isFile()) {
+        candidates.push({ path: rootPath, layer });
+      } else {
+        candidates.push(...listMarkdownFiles(projectRoot, rootPath).map((filePath) => ({ path: filePath, layer })));
+      }
+    }
+  }
+  const results = candidates
+    .map((candidate) => {
+      const content = readFileSafe(safeJoin(projectRoot, candidate.path)) || '';
+      const haystack = `${candidate.path}\n${content}`.toLowerCase();
+      const score = terms.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0);
+      return {
+        ...candidate,
+        score,
+        preview: content.replace(/\s+/g, ' ').trim().slice(0, 240),
+      };
+    })
+    .filter((item) => item.score > 0 || terms.length === 0)
+    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+    .slice(0, options.limit || 20)
+    .map(({ score: _score, ...item }) => item);
+  return { query: options.query, results };
+}
+
+export function buildDocsContext(
+  projectRoot: string,
+  options: { query?: string; domains?: string[]; modules?: string[]; maxBytes?: number } = {},
+): { content: string; sources: Array<{ path: string; layer: DocsLayer; bytes: number }>; truncated: boolean } {
+  const maxBytes = options.maxBytes || 12000;
+  const ordered: Array<{ path: string; layer: DocsLayer }> = [
+    { path: `${DEFAULT_OPENSPEC_DIR}/project.md`, layer: 'openspec' },
+    { path: `${DEFAULT_OPENSPEC_DIR}/AGENTS.md`, layer: 'openspec' },
+  ];
+  for (const domain of options.domains || []) {
+    ordered.push({ path: `${DEFAULT_OPENSPEC_DIR}/specs/${domain}/spec.md`, layer: 'openspec' });
+  }
+  for (const moduleName of options.modules || []) {
+    ordered.push({ path: `${DEFAULT_DOCS_DIR}/generated/modules/${moduleName}/index.md`, layer: 'generated' });
+    ordered.push({ path: `${DEFAULT_DOCS_DIR}/knowledge/modules/${moduleName}/pitfalls.md`, layer: 'knowledge' });
+  }
+  if (options.query) {
+    ordered.push(...searchDocs(projectRoot, { query: options.query, limit: 12 }).results.map((item) => ({ path: item.path, layer: item.layer })));
+  }
+
+  const seen = new Set<string>();
+  const sources: Array<{ path: string; layer: DocsLayer; bytes: number }> = [];
+  const chunks: string[] = [];
+  let usedBytes = 0;
+  let truncated = false;
+  for (const item of ordered) {
+    if (seen.has(item.path)) continue;
+    seen.add(item.path);
+    const content = readFileSafe(safeJoin(projectRoot, item.path));
+    if (!content) continue;
+    const chunk = `\n\n## Source: ${item.path}\n${content.trim()}\n`;
+    const bytes = Buffer.byteLength(chunk, 'utf-8');
+    if (usedBytes + bytes > maxBytes) {
+      truncated = true;
+      continue;
+    }
+    usedBytes += bytes;
+    chunks.push(chunk);
+    sources.push({ path: item.path, layer: item.layer, bytes });
+  }
+  return { content: chunks.join('').trim(), sources, truncated };
+}
+
+function activeChangeSpecContent(projectRoot: string, change: ChangeState): string {
+  if (!change.paths.specs) return '';
+  return readFileSafe(safeJoin(projectRoot, change.paths.specs)) || '';
+}
+
+export function checkDocsFreshness(
+  projectRoot: string,
+  options: { domains?: string[]; changeId?: string } = {},
+): { stale: Array<{ domain: string; reason: string; path: string }>; current: Array<{ domain: string; path: string }> } {
+  const state = readState(projectRoot);
+  const change = options.changeId ? state.changes[options.changeId] : getActiveChange(state);
+  const domains = options.domains?.length ? options.domains : ['general'];
+  const stale: Array<{ domain: string; reason: string; path: string }> = [];
+  const current: Array<{ domain: string; path: string }> = [];
+  for (const domain of domains) {
+    const specPath = `${DEFAULT_OPENSPEC_DIR}/specs/${domain}/spec.md`;
+    const content = readFileSafe(safeJoin(projectRoot, specPath));
+    if (!content) {
+      stale.push({ domain, reason: 'Main domain spec is missing.', path: specPath });
+    } else if (change && !content.includes(`Source change: ${change.changeId}`)) {
+      stale.push({ domain, reason: `Main domain spec does not include active change ${change.changeId}.`, path: specPath });
+    } else {
+      current.push({ domain, path: specPath });
+    }
+  }
+  return { stale, current };
+}
+
+export function syncSpecs(
+  projectRoot: string,
+  options: { domains?: string[]; changeId?: string } = {},
+): { updated: Array<{ domain: string; path: string }>; skipped: Array<{ domain: string; reason: string }> } {
+  const state = readState(projectRoot);
+  const change = options.changeId ? state.changes[options.changeId] : getActiveChange(state);
+  if (!change) throw new Error('No active OpenSpec change. Create a change first.');
+  const delta = activeChangeSpecContent(projectRoot, change).trim();
+  if (!delta) throw new Error('Active change has no specs artifact to sync.');
+  const domains = options.domains?.length ? options.domains : ['general'];
+  const updated: Array<{ domain: string; path: string }> = [];
+  const skipped: Array<{ domain: string; reason: string }> = [];
+  for (const domain of domains) {
+    const specPath = `${DEFAULT_OPENSPEC_DIR}/specs/${domain}/spec.md`;
+    const existing = readFileSafe(safeJoin(projectRoot, specPath)) || `# ${domain} Specification\n`;
+    if (existing.includes(`Source change: ${change.changeId}`)) {
+      skipped.push({ domain, reason: 'Domain spec already includes this change.' });
+      continue;
+    }
+    const merged = `${existing.trimEnd()}\n\n---\nSource change: ${change.changeId}\nSynced at: ${now()}\n\n${delta}\n`;
+    writeFileSafe(safeJoin(projectRoot, specPath), merged);
+    updated.push({ domain, path: specPath });
+  }
+  change.metadata = {
+    ...(change.metadata || {}),
+    specs: {
+      domains,
+      mergedAt: now(),
+    },
+  };
+  state.changes[change.changeId] = change;
+  writeState(projectRoot, state);
+  return { updated, skipped };
 }
 
 export function detectLayout(startDir?: string): DetectResult {
